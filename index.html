@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jira Kanban Widget</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: rgba(30, 30, 30, 0.95);
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .titlebar {
+      background: #1a1a1a;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: move;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid #404040;
+    }
+
+    .titlebar h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0052cc;
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 8px;
+      -webkit-app-region: no-drag;
+    }
+
+    .window-controls button {
+      background: none;
+      border: none;
+      color: #b0b0b0;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .window-controls button:hover {
+      background: #404040;
+    }
+
+    .config-section {
+      padding: 16px;
+      background: #252525;
+      border-bottom: 1px solid #404040;
+    }
+
+    .config-section input {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0;
+      background: #1a1a1a;
+      border: 1px solid #404040;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 12px;
+    }
+
+    .config-section button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 8px;
+      background: #0052cc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .config-section button:hover {
+      background: #0065ff;
+    }
+
+    .tasks-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .task-card {
+      background: #252525;
+      border: 1px solid #404040;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .task-card:hover {
+      background: #2a2a2a;
+      border-color: #0052cc;
+      transform: translateX(2px);
+    }
+
+    .task-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .task-key {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0052cc;
+      text-transform: uppercase;
+    }
+
+    .task-priority {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+
+    .priority-highest { background: #de350b; color: white; }
+    .priority-high { background: #ff5630; color: white; }
+    .priority-medium { background: #ff991f; color: white; }
+    .priority-low { background: #36b37e; color: white; }
+    .priority-lowest { background: #00875a; color: white; }
+
+    .task-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #f0f0f0;
+      line-height: 1.3;
+    }
+
+    .task-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: #b0b0b0;
+      margin-bottom: 6px;
+    }
+
+    .task-description {
+      font-size: 11px;
+      color: #999;
+      line-height: 1.4;
+      margin-top: 6px;
+      max-height: 40px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      background: #344563;
+      color: #4c9aff;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #999;
+    }
+
+    .error {
+      background: #de350b;
+      color: white;
+      padding: 12px;
+      margin: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .last-updated {
+      text-align: center;
+      padding: 8px;
+      font-size: 10px;
+      color: #666;
+      border-top: 1px solid #404040;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #1a1a1a;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #404040;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #505050;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="titlebar">
+      <h2>🎯 Jira Kanban</h2>
+      <div class="window-controls">
+        <button id="btn-minimize">−</button>
+        <button id="btn-close">×</button>
+      </div>
+    </div>
+
+    <div class="config-section" id="config-section">
+      <input type="text" id="jira-domain" placeholder="Jira Domain (e.g., yourcompany.atlassian.net)">
+      <input type="email" id="jira-email" placeholder="Your Email">
+      <input type="password" id="jira-token" placeholder="API Token">
+      <input type="text" id="board-id" placeholder="Board ID (e.g., 1)">
+      <button id="btn-save-config">Save & Connect</button>
+    </div>
+
+    <div class="tasks-container" id="tasks-container">
+      <div class="loading">Configure your Jira connection above</div>
+    </div>
+
+    <div class="last-updated" id="last-updated"></div>
+  </div>
+
+  <script>
+    let refreshInterval;
+    let isConfigured = false;
+
+    // Window controls
+    document.getElementById('btn-minimize').addEventListener('click', () => {
+      window.electronAPI.minimizeWindow();
+    });
+
+    document.getElementById('btn-close').addEventListener('click', () => {
+      window.electronAPI.closeWindow();
+    });
+
+    // Save configuration
+    document.getElementById('btn-save-config').addEventListener('click', async () => {
+      const config = {
+        domain: document.getElementById('jira-domain').value.trim(),
+        email: document.getElementById('jira-email').value.trim(),
+        apiToken: document.getElementById('jira-token').value.trim(),
+        boardId: document.getElementById('board-id').value.trim()
+      };
+
+      if (!config.domain || !config.email || !config.apiToken || !config.boardId) {
+        alert('Please fill in all fields');
+        return;
+      }
+
+      await window.electronAPI.saveConfig(config);
+      isConfigured = true;
+      document.getElementById('config-section').classList.add('hidden');
+      
+      fetchAndDisplayTasks();
+      
+      // Start auto-refresh every 60 seconds
+      if (refreshInterval) clearInterval(refreshInterval);
+      refreshInterval = setInterval(fetchAndDisplayTasks, 60000);
+    });
+
+    async function fetchAndDisplayTasks() {
+      const container = document.getElementById('tasks-container');
+      const lastUpdated = document.getElementById('last-updated');
+      
+      if (!isConfigured) return;
+
+      container.innerHTML = '<div class="loading">Loading tasks...</div>';
+
+      const result = await window.electronAPI.fetchTasks();
+
+      if (result.error) {
+        container.innerHTML = `<div class="error">Error: ${result.error}</div>`;
+        return;
+      }
+
+      if (!result.tasks || result.tasks.length === 0) {
+        container.innerHTML = '<div class="loading">No tasks found</div>';
+        return;
+      }
+
+      container.innerHTML = result.tasks.map(task => {
+        const priorityClass = `priority-${task.priority.toLowerCase()}`;
+        const description = task.description.substring(0, 100);
+        
+        return `
+          <div class="task-card" onclick="openTask('${task.url}')">
+            <div class="task-header">
+              <span class="task-key">${task.key}</span>
+              <span class="task-priority ${priorityClass}">${task.priority}</span>
+            </div>
+            <div class="task-title">${task.title}</div>
+            <div class="task-meta">
+              <span class="status-badge">${task.status}</span>
+              <span>👤 ${task.assignee}</span>
+            </div>
+            <div class="task-description">${description}${description.length >= 100 ? '...' : ''}</div>
+          </div>
+        `;
+      }).join('');
+
+      const now = new Date().toLocaleTimeString();
+      lastUpdated.textContent = `Last updated: ${now}`;
+    }
+
+    function openTask(url) {
+      window.electronAPI.openExternal(url);
+    }
+
+    // Show config on startup
+    document.getElementById('config-section').classList.remove('hidden');
+  </script>
+</body>
+</html>

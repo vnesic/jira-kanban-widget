@@ -1,0 +1,33 @@
+{
+  "name": "jira-kanban-widget",
+  "version": "1.0.0",
+  "description": "Floating desktop widget for Jira Kanban boards",
+  "main": "main.js",
+  "homepage": "https://github.com/vnesic/jira-kanban-widget",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "build": "electron-builder --linux"
+  },
+  "keywords": ["jira", "kanban", "electron", "widget"],
+  "author": {
+    "name": "VladimirNesic",
+    "email": "vladimirs.nesic@gmail.com"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "build": {
+    "appId": "com.yourcompany.jira-kanban-widget",
+    "productName": "Jira Kanban Widget",
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility",
+      "maintainer": "Vladimir <your.email@example.com>"
+    }
+  }
+}
