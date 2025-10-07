@@ -183,6 +183,7 @@
       text-align: center;
       padding: 20px;
       color: #999;
+      font-size: 13px;
     }
 
     .error {
@@ -200,6 +201,57 @@
       font-size: 10px;
       color: #666;
       border-top: 1px solid #404040;
+    }
+
+    .refresh-bar {
+      padding: 8px 12px;
+      border-top: 1px solid #404040;
+      background: #252525;
+    }
+
+    .refresh-main-btn {
+      width: 100%;
+      padding: 10px;
+      background: #344563;
+      color: #4c9aff;
+      border: 1px solid #4c9aff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .refresh-main-btn:hover {
+      background: #4c9aff;
+      color: white;
+    }
+
+    .refresh-main-btn:active {
+      transform: scale(0.98);
+    }
+
+    .refresh-icon {
+      font-size: 16px;
+      display: inline-block;
+      transition: transform 0.3s;
+    }
+
+    .refresh-main-btn:hover .refresh-icon {
+      transform: rotate(180deg);
+    }
+
+    .refresh-main-btn.loading .refresh-icon {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     ::-webkit-scrollbar {
@@ -229,6 +281,8 @@
     <div class="titlebar">
       <h2>🎯 Jira Kanban</h2>
       <div class="window-controls">
+        <button id="btn-logout" title="Logout">🚪</button>
+        <button id="btn-refresh" title="Refresh tasks">↻</button>
         <button id="btn-minimize">−</button>
         <button id="btn-close">×</button>
       </div>
@@ -246,12 +300,39 @@
       <div class="loading">Configure your Jira connection above</div>
     </div>
 
+    <div class="refresh-bar">
+      <button id="btn-refresh-main" class="refresh-main-btn">
+        <span class="refresh-icon">↻</span> Refresh Tasks
+      </button>
+    </div>
+
     <div class="last-updated" id="last-updated"></div>
   </div>
 
   <script>
     let refreshInterval;
     let isConfigured = false;
+
+    // Listen for saved configuration
+    window.electronAPI.onConfigLoaded((config) => {
+      if (config.domain && config.email && config.apiToken && config.boardId) {
+        // Auto-fill the form
+        document.getElementById('jira-domain').value = config.domain;
+        document.getElementById('jira-email').value = config.email;
+        document.getElementById('jira-token').value = config.apiToken;
+        document.getElementById('board-id').value = config.boardId;
+        
+        // Auto-connect
+        isConfigured = true;
+        document.getElementById('config-section').classList.add('hidden');
+        
+        fetchAndDisplayTasks();
+        
+        // Start auto-refresh every 60 seconds
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(fetchAndDisplayTasks, 60000);
+      }
+    });
 
     // Window controls
     document.getElementById('btn-minimize').addEventListener('click', () => {
@@ -260,6 +341,38 @@
 
     document.getElementById('btn-close').addEventListener('click', () => {
       window.electronAPI.closeWindow();
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+      if (confirm('Are you sure you want to logout? Your credentials will be deleted.')) {
+        await window.electronAPI.logout();
+        // Reset UI
+        isConfigured = false;
+        if (refreshInterval) clearInterval(refreshInterval);
+        document.getElementById('jira-domain').value = '';
+        document.getElementById('jira-email').value = '';
+        document.getElementById('jira-token').value = '';
+        document.getElementById('board-id').value = '';
+        document.getElementById('config-section').classList.remove('hidden');
+        document.getElementById('tasks-container').innerHTML = '<div class="loading">Configure your Jira connection above</div>';
+        document.getElementById('last-updated').textContent = '';
+      }
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => {
+      if (isConfigured) {
+        fetchAndDisplayTasks();
+      }
+    });
+
+    document.getElementById('btn-refresh-main').addEventListener('click', () => {
+      if (isConfigured) {
+        const btn = document.getElementById('btn-refresh-main');
+        btn.classList.add('loading');
+        fetchAndDisplayTasks().finally(() => {
+          btn.classList.remove('loading');
+        });
+      }
     });
 
     // Save configuration
@@ -276,11 +389,29 @@
         return;
       }
 
+      // Show loading state
+      const container = document.getElementById('tasks-container');
+      container.innerHTML = '<div class="loading">Testing connection...</div>';
+
+      // Save config temporarily (without persisting to disk yet)
       await window.electronAPI.saveConfig(config);
+      
+      // Test the connection by fetching tasks
+      const result = await window.electronAPI.fetchTasks();
+
+      if (result.error) {
+        // Connection failed - don't save credentials
+        container.innerHTML = `<div class="error">Connection failed: ${result.error}<br><br>Please check your credentials and try again.</div>`;
+        document.getElementById('config-section').classList.remove('hidden');
+        return;
+      }
+
+      // Connection successful - credentials are already saved
       isConfigured = true;
       document.getElementById('config-section').classList.add('hidden');
       
-      fetchAndDisplayTasks();
+      // Display the fetched tasks
+      displayTasks(result);
       
       // Start auto-refresh every 60 seconds
       if (refreshInterval) clearInterval(refreshInterval);
@@ -302,6 +433,13 @@
         return;
       }
 
+      displayTasks(result);
+    }
+
+    function displayTasks(result) {
+      const container = document.getElementById('tasks-container');
+      const lastUpdated = document.getElementById('last-updated');
+
       if (!result.tasks || result.tasks.length === 0) {
         container.innerHTML = '<div class="loading">No tasks found</div>';
         return;
@@ -312,7 +450,7 @@
         const description = task.description.substring(0, 100);
         
         return `
-          <div class="task-card" onclick="openTask('${task.url}')">
+          <div class="task-card" data-url="${task.url}">
             <div class="task-header">
               <span class="task-key">${task.key}</span>
               <span class="task-priority ${priorityClass}">${task.priority}</span>
@@ -327,6 +465,14 @@
         `;
       }).join('');
 
+      // Add click event listeners to all task cards
+      document.querySelectorAll('.task-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const url = card.getAttribute('data-url');
+          openTask(url);
+        });
+      });
+
       const now = new Date().toLocaleTimeString();
       lastUpdated.textContent = `Last updated: ${now}`;
     }
@@ -335,8 +481,33 @@
       window.electronAPI.openExternal(url);
     }
 
-    // Show config on startup
-    document.getElementById('config-section').classList.remove('hidden');
+    // Load saved config on startup
+    async function loadSavedConfig() {
+      const config = await window.electronAPI.getConfig();
+      if (config && config.domain && config.email && config.apiToken && config.boardId) {
+        // Auto-fill the form
+        document.getElementById('jira-domain').value = config.domain;
+        document.getElementById('jira-email').value = config.email;
+        document.getElementById('jira-token').value = config.apiToken;
+        document.getElementById('board-id').value = config.boardId;
+        
+        // Auto-connect
+        isConfigured = true;
+        document.getElementById('config-section').classList.add('hidden');
+        
+        fetchAndDisplayTasks();
+        
+        // Start auto-refresh every 60 seconds
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(fetchAndDisplayTasks, 60000);
+      } else {
+        // Show config section if no saved config
+        document.getElementById('config-section').classList.remove('hidden');
+      }
+    }
+
+    // Initialize on page load
+    loadSavedConfig();
   </script>
 </body>
 </html>
